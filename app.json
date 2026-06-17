@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "FoodDiary – Unverträglichkeiten",
-    "slug": "fooddiary",
+    "slug": "food-diary",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -25,7 +25,7 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "1a07f253-b880-4cdc-8e47-c9e41f5be98f"
+        "projectId": "1a07f253-b880-4cdc-8e47-c9e41f5be98fD"
       }
     }
   }
