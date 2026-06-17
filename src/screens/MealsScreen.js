@@ -9,7 +9,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import {
   saveMeal, getMeals, deleteMeal, updateMeal,
   getCustomIngredients, saveCustomIngredients,
-  getIngredientGroups, saveIngredientGroups, addIngredientGroup, deleteIngredientGroup
+  getIngredientGroups, saveIngredientGroups,
 } from '../utils/storage';
 
 const COLORS = {
@@ -24,7 +24,142 @@ const DEFAULT_INGREDIENTS = [
   'Eier','Fleisch','Fisch','Nüsse','Soja','Zucker','Laktose','Fruktose',
 ];
 
-function MealForm({ initial, onSave, onCancel, quickList, groups, onEditQuick, onEditGroups }) {
+// ── Gruppen-Modal (eigenständig, bekommt alles direkt übergeben) ──
+function GroupsModal({ visible, groups, onClose, onGroupsChanged }) {
+  const [newGroupName, setNewGroupName] = useState('');
+  const [newGroupIngredients, setNewGroupIngredients] = useState('');
+  const [editingGroup, setEditingGroup] = useState(null);
+  const [editName, setEditName] = useState('');
+  const [editIngredients, setEditIngredients] = useState('');
+
+  const addGroup = async () => {
+    const name = newGroupName.trim();
+    const ings = newGroupIngredients.split(',').map(i => i.trim()).filter(Boolean);
+    if (!name || ings.length === 0) {
+      Alert.alert('Fehler', 'Bitte Name und Zutaten (kommagetrennt) eingeben.');
+      return;
+    }
+    const updated = [...groups, { id: Date.now().toString(), name, ingredients: ings }];
+    await saveIngredientGroups(updated);
+    onGroupsChanged(updated);
+    setNewGroupName('');
+    setNewGroupIngredients('');
+  };
+
+  const deleteGroup = async (id) => {
+    Alert.alert('Löschen', 'Gruppe wirklich löschen?', [
+      { text: 'Abbrechen', style: 'cancel' },
+      { text: 'Löschen', style: 'destructive', onPress: async () => {
+        const updated = groups.filter(g => g.id !== id);
+        await saveIngredientGroups(updated);
+        onGroupsChanged(updated);
+      }},
+    ]);
+  };
+
+  const startEdit = (group) => {
+    setEditingGroup(group.id);
+    setEditName(group.name);
+    setEditIngredients(group.ingredients.join(', '));
+  };
+
+  const saveEdit = async () => {
+    const name = editName.trim();
+    const ings = editIngredients.split(',').map(i => i.trim()).filter(Boolean);
+    if (!name || ings.length === 0) {
+      Alert.alert('Fehler', 'Bitte Name und Zutaten eingeben.');
+      return;
+    }
+    const updated = groups.map(g => g.id === editingGroup ? { ...g, name, ingredients: ings } : g);
+    await saveIngredientGroups(updated);
+    onGroupsChanged(updated);
+    setEditingGroup(null);
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <View style={styles.modalContainer}>
+        <View style={styles.modalHeader}>
+          <Text style={styles.modalTitle}>📦 Zutaten-Gruppen</Text>
+          <TouchableOpacity onPress={onClose}>
+            <Text style={styles.modalClose}>✅ Fertig</Text>
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView style={{ flex: 1, padding: 16 }} contentContainerStyle={{ paddingBottom: 40 }}>
+          {/* Neue Gruppe */}
+          <Text style={styles.sectionTitle}>➕ Neue Gruppe erstellen</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Gruppenname (z.B. Pommes frites)"
+            value={newGroupName}
+            onChangeText={setNewGroupName}
+          />
+          <TextInput
+            style={[styles.input, { marginTop: 8 }]}
+            placeholder="Zutaten kommagetrennt (z.B. Kartoffeln, Sonnenblumenöl, Salz)"
+            value={newGroupIngredients}
+            onChangeText={setNewGroupIngredients}
+            multiline
+          />
+          <TouchableOpacity style={styles.saveBtn} onPress={addGroup}>
+            <Text style={styles.saveBtnText}>+ Gruppe hinzufügen</Text>
+          </TouchableOpacity>
+
+          {/* Vorhandene Gruppen */}
+          <Text style={[styles.sectionTitle, { marginTop: 24 }]}>📋 Vorhandene Gruppen</Text>
+          {groups.length === 0 && (
+            <Text style={{ color: COLORS.gray, textAlign: 'center', marginTop: 10 }}>Noch keine Gruppen vorhanden.</Text>
+          )}
+          {groups.map(g => (
+            <View key={g.id} style={styles.groupCard}>
+              {editingGroup === g.id ? (
+                // Edit-Modus
+                <View style={{ flex: 1 }}>
+                  <TextInput style={styles.input} value={editName} onChangeText={setEditName} placeholder="Gruppenname" />
+                  <TextInput
+                    style={[styles.input, { marginTop: 6 }]}
+                    value={editIngredients}
+                    onChangeText={setEditIngredients}
+                    placeholder="Zutaten kommagetrennt"
+                    multiline
+                  />
+                  <View style={styles.editBtnRow}>
+                    <TouchableOpacity style={styles.saveBtnSmall} onPress={saveEdit}>
+                      <Text style={styles.saveBtnText}>💾 Speichern</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.cancelBtnSmall} onPress={() => setEditingGroup(null)}>
+                      <Text style={styles.cancelBtnSmallText}>Abbrechen</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : (
+                // Ansichts-Modus
+                <>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.groupCardName}>📦 {g.name}</Text>
+                    <Text style={styles.groupCardIngredients}>{g.ingredients.join(' · ')}</Text>
+                  </View>
+                  <View style={styles.groupCardActions}>
+                    <TouchableOpacity onPress={() => startEdit(g)} style={{ marginRight: 12 }}>
+                      <Ionicons name="pencil-outline" size={20} color={COLORS.accent} />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => deleteGroup(g.id)}>
+                      <Ionicons name="trash-outline" size={20} color={COLORS.danger} />
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
+            </View>
+          ))}
+        </ScrollView>
+      </View>
+    </Modal>
+  );
+}
+
+// ── Mahlzeit-Formular ──────────────────────────────────────────
+function MealForm({ initial, onSave, onCancel, quickList, groups, onQuickListChanged, onGroupsChanged }) {
   const [name, setName] = useState(initial?.name || '');
   const [ingredientInput, setIngredientInput] = useState('');
   const [ingredients, setIngredients] = useState(initial?.ingredients || []);
@@ -34,6 +169,7 @@ function MealForm({ initial, onSave, onCancel, quickList, groups, onEditQuick, o
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [showEditQuick, setShowEditQuick] = useState(false);
   const [showGroups, setShowGroups] = useState(false);
+  const [showGroupsModal, setShowGroupsModal] = useState(false);
   const [newQuickItem, setNewQuickItem] = useState('');
 
   const addIngredient = (ing) => {
@@ -65,6 +201,13 @@ function MealForm({ initial, onSave, onCancel, quickList, groups, onEditQuick, o
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+      <GroupsModal
+        visible={showGroupsModal}
+        groups={groups}
+        onClose={() => setShowGroupsModal(false)}
+        onGroupsChanged={onGroupsChanged}
+      />
+
       <ScrollView style={styles.form} contentContainerStyle={{ paddingBottom: 40 }}>
         <Text style={styles.formTitle}>{initial ? '✏️ Mahlzeit bearbeiten' : '🍽️ Neue Mahlzeit'}</Text>
 
@@ -109,7 +252,7 @@ function MealForm({ initial, onSave, onCancel, quickList, groups, onEditQuick, o
           </TouchableOpacity>
         </View>
 
-        {/* Gruppen-Button */}
+        {/* Gruppen */}
         <TouchableOpacity style={styles.groupToggleBtn} onPress={() => setShowGroups(!showGroups)}>
           <Ionicons name="albums-outline" size={16} color={COLORS.primary} />
           <Text style={styles.groupToggleText}>{showGroups ? 'Gruppen ausblenden' : '📦 Zutaten-Gruppen verwenden'}</Text>
@@ -117,17 +260,22 @@ function MealForm({ initial, onSave, onCancel, quickList, groups, onEditQuick, o
 
         {showGroups && (
           <View style={styles.groupsBox}>
-            <Text style={styles.sublabel}>Gruppe antippen = alle Zutaten werden hinzugefügt:</Text>
-            <View style={styles.chips}>
-              {groups.map(g => (
-                <TouchableOpacity key={g.id} style={styles.groupChip} onPress={() => addGroup(g)}>
-                  <Text style={styles.groupChipText}>📦 {g.name}</Text>
-                  <Text style={styles.groupChipSub}>{g.ingredients.join(', ')}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            <TouchableOpacity style={styles.editLink2} onPress={onEditGroups}>
-              <Text style={styles.editLinkText}>✏️ Gruppen verwalten</Text>
+            <Text style={styles.sublabel}>Gruppe antippen = alle Zutaten hinzufügen:</Text>
+            {groups.length === 0 ? (
+              <Text style={{ color: COLORS.gray, fontSize: 13 }}>Noch keine Gruppen. Unten erstellen.</Text>
+            ) : (
+              <View>
+                {groups.map(g => (
+                  <TouchableOpacity key={g.id} style={styles.groupChip} onPress={() => addGroup(g)}>
+                    <Text style={styles.groupChipText}>📦 {g.name}</Text>
+                    <Text style={styles.groupChipSub}>{g.ingredients.join(', ')}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+            <TouchableOpacity style={styles.manageGroupsBtn} onPress={() => setShowGroupsModal(true)}>
+              <Ionicons name="settings-outline" size={15} color={COLORS.white} />
+              <Text style={styles.manageGroupsBtnText}>Gruppen verwalten</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -145,7 +293,7 @@ function MealForm({ initial, onSave, onCancel, quickList, groups, onEditQuick, o
             <View style={styles.row}>
               <TextInput
                 style={[styles.input, { flex: 1, marginRight: 8 }]}
-                placeholder="Neue Zutat..."
+                placeholder="Neue Zutat zur Schnellauswahl..."
                 value={newQuickItem}
                 onChangeText={setNewQuickItem}
               />
@@ -154,19 +302,20 @@ function MealForm({ initial, onSave, onCancel, quickList, groups, onEditQuick, o
                 if (trimmed && !quickList.includes(trimmed)) {
                   const updated = [...quickList, trimmed];
                   await saveCustomIngredients(updated);
-                  onEditQuick(updated);
+                  onQuickListChanged(updated);
                   setNewQuickItem('');
                 }
               }}>
                 <Ionicons name="add" size={24} color={COLORS.white} />
               </TouchableOpacity>
             </View>
+            <Text style={styles.sublabel}>Tippe ✕ zum Entfernen:</Text>
             <View style={styles.chips}>
               {quickList.map(ing => (
                 <TouchableOpacity key={ing} style={styles.chipDelete} onPress={async () => {
                   const updated = quickList.filter(i => i !== ing);
                   await saveCustomIngredients(updated);
-                  onEditQuick(updated);
+                  onQuickListChanged(updated);
                 }}>
                   <Text style={styles.chipDeleteText}>{ing} ✕</Text>
                 </TouchableOpacity>
@@ -220,67 +369,6 @@ function MealForm({ initial, onSave, onCancel, quickList, groups, onEditQuick, o
   );
 }
 
-// ── Gruppen-Verwaltungs-Modal ──────────────────────────────────
-function GroupsModal({ visible, groups, onClose, onSave }) {
-  const [localGroups, setLocalGroups] = useState(groups);
-  const [newGroupName, setNewGroupName] = useState('');
-  const [newGroupIngredients, setNewGroupIngredients] = useState('');
-
-  const addGroup = () => {
-    const name = newGroupName.trim();
-    const ings = newGroupIngredients.split(',').map(i => i.trim()).filter(Boolean);
-    if (!name || ings.length === 0) {
-      Alert.alert('Fehler', 'Bitte Name und mindestens eine Zutat (kommagetrennt) eingeben.');
-      return;
-    }
-    const updated = [...localGroups, { id: Date.now().toString(), name, ingredients: ings }];
-    setLocalGroups(updated);
-    setNewGroupName('');
-    setNewGroupIngredients('');
-  };
-
-  const removeGroup = (id) => setLocalGroups(prev => prev.filter(g => g.id !== id));
-
-  return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View style={styles.modalContainer}>
-        <View style={styles.modalHeader}>
-          <Text style={styles.modalTitle}>📦 Zutaten-Gruppen verwalten</Text>
-          <TouchableOpacity onPress={() => { onSave(localGroups); onClose(); }}>
-            <Text style={styles.modalClose}>✅ Fertig</Text>
-          </TouchableOpacity>
-        </View>
-        <ScrollView style={{ flex: 1, padding: 16 }}>
-          <Text style={styles.label}>Neue Gruppe erstellen</Text>
-          <TextInput style={styles.input} placeholder="Gruppenname (z.B. Pommes frites)" value={newGroupName} onChangeText={setNewGroupName} />
-          <TextInput
-            style={[styles.input, { marginTop: 8 }]}
-            placeholder="Zutaten kommagetrennt (z.B. Kartoffeln, Sonnenblumenöl, Salz)"
-            value={newGroupIngredients}
-            onChangeText={setNewGroupIngredients}
-          />
-          <TouchableOpacity style={[styles.saveBtn, { marginTop: 10 }]} onPress={addGroup}>
-            <Text style={styles.saveBtnText}>+ Gruppe hinzufügen</Text>
-          </TouchableOpacity>
-
-          <Text style={[styles.label, { marginTop: 20 }]}>Vorhandene Gruppen:</Text>
-          {localGroups.map(g => (
-            <View key={g.id} style={styles.groupCard}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.groupCardName}>📦 {g.name}</Text>
-                <Text style={styles.groupCardIngredients}>{g.ingredients.join(' · ')}</Text>
-              </View>
-              <TouchableOpacity onPress={() => removeGroup(g.id)}>
-                <Ionicons name="trash-outline" size={20} color={COLORS.danger} />
-              </TouchableOpacity>
-            </View>
-          ))}
-        </ScrollView>
-      </View>
-    </Modal>
-  );
-}
-
 // ── Hauptscreen ────────────────────────────────────────────────
 export default function MealsScreen() {
   const [meals, setMeals] = useState([]);
@@ -288,7 +376,6 @@ export default function MealsScreen() {
   const [editingMeal, setEditingMeal] = useState(null);
   const [quickList, setQuickList] = useState(DEFAULT_INGREDIENTS);
   const [groups, setGroups] = useState([]);
-  const [showGroupsModal, setShowGroupsModal] = useState(false);
 
   useFocusEffect(useCallback(() => { loadAll(); }, []));
 
@@ -302,19 +389,11 @@ export default function MealsScreen() {
   };
 
   const handleSave = async (meal) => {
-    if (editingMeal) {
-      await updateMeal(meal);
-    } else {
-      await saveMeal(meal);
-    }
+    if (editingMeal) await updateMeal(meal);
+    else await saveMeal(meal);
     setShowForm(false);
     setEditingMeal(null);
     loadAll();
-  };
-
-  const handleEdit = (meal) => {
-    setEditingMeal(meal);
-    setShowForm(true);
   };
 
   const handleDelete = (id) => {
@@ -322,11 +401,6 @@ export default function MealsScreen() {
       { text: 'Abbrechen', style: 'cancel' },
       { text: 'Löschen', style: 'destructive', onPress: async () => { await deleteMeal(id); loadAll(); }},
     ]);
-  };
-
-  const handleSaveGroups = async (newGroups) => {
-    setGroups(newGroups);
-    await saveIngredientGroups(newGroups);
   };
 
   const formatDate = (iso) => new Date(iso).toLocaleString('de-DE', {
@@ -341,21 +415,14 @@ export default function MealsScreen() {
         groups={groups}
         onSave={handleSave}
         onCancel={() => { setShowForm(false); setEditingMeal(null); }}
-        onEditQuick={setQuickList}
-        onEditGroups={() => setShowGroupsModal(true)}
+        onQuickListChanged={setQuickList}
+        onGroupsChanged={(newGroups) => { setGroups(newGroups); }}
       />
     );
   }
 
   return (
     <View style={styles.container}>
-      <GroupsModal
-        visible={showGroupsModal}
-        groups={groups}
-        onClose={() => setShowGroupsModal(false)}
-        onSave={handleSaveGroups}
-      />
-
       <TouchableOpacity style={styles.fabButton} onPress={() => { setEditingMeal(null); setShowForm(true); }}>
         <Ionicons name="add" size={28} color={COLORS.white} />
         <Text style={styles.fabText}>Mahlzeit eintragen</Text>
@@ -365,6 +432,7 @@ export default function MealsScreen() {
         <View style={styles.empty}>
           <Text style={styles.emptyIcon}>🍽️</Text>
           <Text style={styles.emptyText}>Noch keine Mahlzeiten eingetragen.</Text>
+          <Text style={styles.emptySubtext}>Tippe auf „Mahlzeit eintragen", um zu starten.</Text>
         </View>
       ) : (
         <FlatList
@@ -376,7 +444,7 @@ export default function MealsScreen() {
               <View style={styles.cardHeader}>
                 <Text style={styles.cardTitle}>{item.name}</Text>
                 <View style={styles.cardActions}>
-                  <TouchableOpacity onPress={() => handleEdit(item)} style={{ marginRight: 12 }}>
+                  <TouchableOpacity onPress={() => { setEditingMeal(item); setShowForm(true); }} style={{ marginRight: 14 }}>
                     <Ionicons name="pencil-outline" size={20} color={COLORS.accent} />
                   </TouchableOpacity>
                   <TouchableOpacity onPress={() => handleDelete(item.id)}>
@@ -405,6 +473,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   form: { flex: 1, padding: 16 },
   formTitle: { fontSize: 20, fontWeight: 'bold', color: COLORS.primary, marginBottom: 16 },
+  sectionTitle: { fontSize: 16, fontWeight: 'bold', color: COLORS.primary, marginBottom: 8 },
   label: { fontSize: 14, fontWeight: '600', color: COLORS.text, marginTop: 12, marginBottom: 4 },
   sublabel: { fontSize: 12, color: COLORS.gray, marginTop: 4, marginBottom: 4 },
   input: {
@@ -425,15 +494,19 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.light, borderRadius: 10, padding: 10, marginTop: 10,
   },
   groupToggleText: { color: COLORS.primary, fontWeight: '600', fontSize: 13 },
-  groupsBox: { backgroundColor: COLORS.light, borderRadius: 10, padding: 10, marginTop: 6 },
+  groupsBox: { backgroundColor: COLORS.light, borderRadius: 10, padding: 12, marginTop: 6 },
   groupChip: {
     backgroundColor: COLORS.white, borderRadius: 10, padding: 10,
-    marginBottom: 6, borderWidth: 1, borderColor: COLORS.accent,
+    marginBottom: 8, borderWidth: 1, borderColor: COLORS.accent,
   },
   groupChipText: { fontWeight: '600', color: COLORS.primary, fontSize: 14 },
   groupChipSub: { fontSize: 11, color: COLORS.gray, marginTop: 2 },
-  editLink2: { marginTop: 8, alignItems: 'flex-end' },
-  editLinkText: { color: COLORS.accent, fontSize: 13, fontWeight: '600' },
+  manageGroupsBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: COLORS.primary, borderRadius: 8, padding: 10, marginTop: 8,
+    justifyContent: 'center',
+  },
+  manageGroupsBtnText: { color: COLORS.white, fontWeight: '600', fontSize: 13 },
   quickHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 },
   editLink: { color: COLORS.accent, fontSize: 13, fontWeight: '600' },
   editQuickBox: { backgroundColor: COLORS.light, borderRadius: 10, padding: 10, marginBottom: 8 },
@@ -450,10 +523,14 @@ const styles = StyleSheet.create({
   chipDeleteText: { color: COLORS.danger, fontSize: 13 },
   chipText: { color: COLORS.primary, fontSize: 13 },
   chipTextSelected: { color: COLORS.white, fontSize: 13, fontWeight: '600' },
-  saveBtn: { backgroundColor: COLORS.primary, borderRadius: 12, padding: 16, alignItems: 'center', marginTop: 20 },
-  saveBtnText: { color: COLORS.white, fontSize: 16, fontWeight: 'bold' },
+  saveBtn: { backgroundColor: COLORS.primary, borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 12 },
+  saveBtnSmall: { backgroundColor: COLORS.primary, borderRadius: 10, padding: 10, alignItems: 'center', flex: 1, marginRight: 8 },
+  saveBtnText: { color: COLORS.white, fontSize: 15, fontWeight: 'bold' },
   cancelBtn: { alignItems: 'center', marginTop: 12, padding: 10 },
   cancelBtnText: { color: COLORS.gray, fontSize: 15 },
+  cancelBtnSmall: { backgroundColor: COLORS.border, borderRadius: 10, padding: 10, alignItems: 'center', flex: 1 },
+  cancelBtnSmallText: { color: COLORS.text, fontSize: 14 },
+  editBtnRow: { flexDirection: 'row', marginTop: 8 },
   fabButton: {
     backgroundColor: COLORS.primary, margin: 16, borderRadius: 12, padding: 14,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, elevation: 3,
@@ -462,6 +539,7 @@ const styles = StyleSheet.create({
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
   emptyIcon: { fontSize: 60, marginBottom: 16 },
   emptyText: { fontSize: 18, fontWeight: '600', color: COLORS.text, textAlign: 'center' },
+  emptySubtext: { fontSize: 14, color: COLORS.gray, textAlign: 'center', marginTop: 8 },
   card: {
     backgroundColor: COLORS.white, borderRadius: 12, padding: 14,
     marginBottom: 12, elevation: 2, borderLeftWidth: 4, borderLeftColor: COLORS.accent,
@@ -481,8 +559,9 @@ const styles = StyleSheet.create({
   groupCard: {
     backgroundColor: COLORS.white, borderRadius: 10, padding: 12,
     marginBottom: 8, flexDirection: 'row', alignItems: 'center',
-    borderLeftWidth: 3, borderLeftColor: COLORS.accent,
+    borderLeftWidth: 3, borderLeftColor: COLORS.accent, elevation: 1,
   },
   groupCardName: { fontWeight: 'bold', color: COLORS.primary, fontSize: 14 },
   groupCardIngredients: { fontSize: 12, color: COLORS.gray, marginTop: 2 },
+  groupCardActions: { flexDirection: 'row', alignItems: 'center' },
 });
