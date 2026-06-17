@@ -45,6 +45,8 @@ export default function SymptomsScreen() {
   const [severity, setSeverity] = useState(5);
   const [notes, setNotes] = useState('');
   const [showForm, setShowForm] = useState(false);
+  const [dateTime, setDateTime] = useState('');
+
 
   useFocusEffect(
     useCallback(() => {
@@ -69,7 +71,7 @@ export default function SymptomsScreen() {
       icon: selectedType.icon,
       severity,
       notes: notes.trim(),
-      timestamp: new Date().toISOString(),
+      timestamp: dateTime ? new Date(dateTime).toISOString() : new Date().toISOString(),
     };
 
     await saveSymptom(symptom);
@@ -106,7 +108,13 @@ export default function SymptomsScreen() {
       {showForm ? (
         <ScrollView style={styles.form} contentContainerStyle={{ paddingBottom: 40 }}>
           <Text style={styles.formTitle}>Symptom eintragen</Text>
-          <Text style={styles.timestamp}>🕐 Jetzt: {new Date().toLocaleString('de-DE')}</Text>
+          <Text style={styles.timestamp}>🕐 Datum & Uhrzeit:</Text>
+            <TextInput
+              style={styles.input}
+              value={dateTime}
+              onChangeText={setDateTime}
+              placeholder="YYYY-MM-DDTHH:MM  (leer = jetzt)"
+            />
 
           <Text style={styles.label}>Symptom auswählen *</Text>
           <View style={styles.symptomGrid}>
@@ -156,7 +164,7 @@ export default function SymptomsScreen() {
         </ScrollView>
       ) : (
         <>
-          <TouchableOpacity style={styles.fabButton} onPress={() => setShowForm(true)}>
+          <TouchableOpacity style={styles.fabButton} onPress={() => { setDateTime(''); setShowForm(true); }}>
             <Ionicons name="add" size={28} color={COLORS.white} />
             <Text style={styles.fabText}>Symptom eintragen</Text>
           </TouchableOpacity>

@@ -55,3 +55,15 @@ export const exportAllData = async () => {
   const symptoms = await getSymptoms();
   return { meals, symptoms, exportedAt: new Date().toISOString() };
 };
+
+// ── Angepasste Schnellauswahl ────────────────────────────────────
+const CUSTOM_INGREDIENTS_KEY = 'food_diary_custom_ingredients';
+
+export const saveCustomIngredients = async (list) => {
+  await AsyncStorage.setItem(CUSTOM_INGREDIENTS_KEY, JSON.stringify(list));
+};
+
+export const getCustomIngredients = async () => {
+  const data = await AsyncStorage.getItem(CUSTOM_INGREDIENTS_KEY);
+  return data ? JSON.parse(data) : null;
+};

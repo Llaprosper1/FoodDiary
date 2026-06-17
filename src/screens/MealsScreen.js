@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { saveMeal, getMeals, deleteMeal } from '../utils/storage';
+import { saveMeal, getMeals, deleteMeal, getCustomIngredients, saveCustomIngredients } from '../utils/storage';
 
 const COLORS = {
   primary: '#1a472a',
@@ -19,13 +19,23 @@ const COLORS = {
   border: '#dee2e6',
 };
 
-const COMMON_INGREDIENTS = [
+const DEFAULT_INGREDIENTS = [
   'Milch', 'Käse', 'Joghurt', 'Butter', 'Sahne',
   'Weizen', 'Gluten', 'Brot', 'Nudeln',
   'Äpfel', 'Birnen', 'Mango', 'Zwiebeln', 'Knoblauch',
   'Tomaten', 'Paprika', 'Eier', 'Fleisch', 'Fisch',
   'Nüsse', 'Soja', 'Zucker', 'Laktose', 'Fruktose',
 ];
+
+function padTwo(n) { return n.toString().padStart(2, '0'); }
+
+function toDateTimeLocal(date) {
+  return `${date.getFullYear()}-${padTwo(date.getMonth()+1)}-${padTwo(date.getDate())}T${padTwo(date.getHours())}:${padTwo(date.getMinutes())}`;
+}
+
+function fromDateTimeLocal(str) {
+  return new Date(str).toISOString();
+}
 
 export default function MealsScreen() {
   const [meals, setMeals] = useState([]);
@@ -34,16 +44,26 @@ export default function MealsScreen() {
   const [ingredients, setIngredients] = useState([]);
   const [notes, setNotes] = useState('');
   const [showForm, setShowForm] = useState(false);
+  const [dateTime, setDateTime] = useState(toDateTimeLocal(new Date()));
+  const [quickList, setQuickList] = useState(DEFAULT_INGREDIENTS);
+  const [newQuickItem, setNewQuickItem] = useState('');
+  const [showEditQuick, setShowEditQuick] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
       loadMeals();
+      loadQuickList();
     }, [])
   );
 
   const loadMeals = async () => {
     const data = await getMeals();
     setMeals(data);
+  };
+
+  const loadQuickList = async () => {
+    const custom = await getCustomIngredients();
+    if (custom) setQuickList(custom);
   };
 
   const addIngredient = (ing) => {
@@ -58,6 +78,22 @@ export default function MealsScreen() {
     setIngredients(ingredients.filter(i => i !== ing));
   };
 
+  const addToQuickList = async () => {
+    const trimmed = newQuickItem.trim();
+    if (trimmed && !quickList.includes(trimmed)) {
+      const updated = [...quickList, trimmed];
+      setQuickList(updated);
+      await saveCustomIngredients(updated);
+      setNewQuickItem('');
+    }
+  };
+
+  const removeFromQuickList = async (ing) => {
+    const updated = quickList.filter(i => i !== ing);
+    setQuickList(updated);
+    await saveCustomIngredients(updated);
+  };
+
   const handleSave = async () => {
     if (!name.trim()) {
       Alert.alert('Fehler', 'Bitte einen Namen für die Mahlzeit eingeben.');
@@ -67,19 +103,18 @@ export default function MealsScreen() {
       Alert.alert('Fehler', 'Bitte mindestens eine Zutat angeben.');
       return;
     }
-
     const meal = {
       id: Date.now().toString(),
       name: name.trim(),
       ingredients,
       notes: notes.trim(),
-      timestamp: new Date().toISOString(),
+      timestamp: fromDateTimeLocal(dateTime),
     };
-
     await saveMeal(meal);
     setName('');
     setIngredients([]);
     setNotes('');
+    setDateTime(toDateTimeLocal(new Date()));
     setShowForm(false);
     loadMeals();
   };
@@ -106,6 +141,15 @@ export default function MealsScreen() {
           <ScrollView style={styles.form} contentContainerStyle={{ paddingBottom: 40 }}>
             <Text style={styles.formTitle}>Neue Mahlzeit</Text>
 
+            <Text style={styles.label}>Datum & Uhrzeit *</Text>
+            <TextInput
+              style={styles.input}
+              value={dateTime}
+              onChangeText={setDateTime}
+              placeholder="YYYY-MM-DDTHH:MM"
+            />
+            <Text style={styles.sublabel}>Format: 2026-06-17T13:30 (auch nachträglich änderbar)</Text>
+
             <Text style={styles.label}>Name der Mahlzeit *</Text>
             <TextInput
               style={styles.input}
@@ -128,9 +172,40 @@ export default function MealsScreen() {
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.sublabel}>Schnellauswahl:</Text>
+            <View style={styles.quickHeader}>
+              <Text style={styles.sublabel}>Schnellauswahl:</Text>
+              <TouchableOpacity onPress={() => setShowEditQuick(!showEditQuick)}>
+                <Text style={styles.editLink}>{showEditQuick ? 'Fertig' : '✏️ Anpassen'}</Text>
+              </TouchableOpacity>
+            </View>
+
+            {showEditQuick && (
+              <View style={styles.editQuickBox}>
+                <Text style={styles.sublabel}>Zutat zur Schnellauswahl hinzufügen:</Text>
+                <View style={styles.row}>
+                  <TextInput
+                    style={[styles.input, { flex: 1, marginRight: 8 }]}
+                    placeholder="Neue Zutat..."
+                    value={newQuickItem}
+                    onChangeText={setNewQuickItem}
+                  />
+                  <TouchableOpacity style={styles.addBtn} onPress={addToQuickList}>
+                    <Ionicons name="add" size={24} color={COLORS.white} />
+                  </TouchableOpacity>
+                </View>
+                <Text style={styles.sublabel}>Tippe auf ✕ um eine Zutat zu entfernen:</Text>
+                <View style={styles.chips}>
+                  {quickList.map(ing => (
+                    <TouchableOpacity key={ing} style={styles.chipDelete} onPress={() => removeFromQuickList(ing)}>
+                      <Text style={styles.chipDeleteText}>{ing} ✕</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
+
             <View style={styles.chips}>
-              {COMMON_INGREDIENTS.map(ing => (
+              {quickList.map(ing => (
                 <TouchableOpacity
                   key={ing}
                   style={[styles.chip, ingredients.includes(ing) && styles.chipSelected]}
@@ -168,7 +243,6 @@ export default function MealsScreen() {
             <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
               <Text style={styles.saveBtnText}>💾 Mahlzeit speichern</Text>
             </TouchableOpacity>
-
             <TouchableOpacity style={styles.cancelBtn} onPress={() => setShowForm(false)}>
               <Text style={styles.cancelBtnText}>Abbrechen</Text>
             </TouchableOpacity>
@@ -176,7 +250,7 @@ export default function MealsScreen() {
         </KeyboardAvoidingView>
       ) : (
         <>
-          <TouchableOpacity style={styles.fabButton} onPress={() => setShowForm(true)}>
+          <TouchableOpacity style={styles.fabButton} onPress={() => { setDateTime(toDateTimeLocal(new Date())); setShowForm(true); }}>
             <Ionicons name="add" size={28} color={COLORS.white} />
             <Text style={styles.fabText}>Mahlzeit eintragen</Text>
           </TouchableOpacity>
@@ -224,7 +298,7 @@ const styles = StyleSheet.create({
   form: { flex: 1, padding: 16 },
   formTitle: { fontSize: 20, fontWeight: 'bold', color: COLORS.primary, marginBottom: 16 },
   label: { fontSize: 14, fontWeight: '600', color: COLORS.text, marginTop: 12, marginBottom: 4 },
-  sublabel: { fontSize: 12, color: COLORS.gray, marginTop: 8, marginBottom: 4 },
+  sublabel: { fontSize: 12, color: COLORS.gray, marginTop: 4, marginBottom: 4 },
   input: {
     backgroundColor: COLORS.white,
     borderRadius: 10,
@@ -242,6 +316,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  quickHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 },
+  editLink: { color: COLORS.accent, fontSize: 13, fontWeight: '600' },
+  editQuickBox: {
+    backgroundColor: COLORS.light,
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 8,
+  },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 },
   chip: {
     backgroundColor: COLORS.light,
@@ -257,6 +339,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
   },
+  chipDelete: {
+    backgroundColor: '#fce4e4',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: COLORS.danger,
+  },
+  chipDeleteText: { color: COLORS.danger, fontSize: 13 },
   chipText: { color: COLORS.primary, fontSize: 13 },
   chipTextSelected: { color: COLORS.white, fontSize: 13, fontWeight: '600' },
   selectedIngredients: { marginTop: 8 },
