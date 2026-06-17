@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { saveMeal, getMeals, deleteMeal, getCustomIngredients, saveCustomIngredients } from '../utils/storage';
 
 const COLORS = {
@@ -27,16 +28,6 @@ const DEFAULT_INGREDIENTS = [
   'Nüsse', 'Soja', 'Zucker', 'Laktose', 'Fruktose',
 ];
 
-function padTwo(n) { return n.toString().padStart(2, '0'); }
-
-function toDateTimeLocal(date) {
-  return `${date.getFullYear()}-${padTwo(date.getMonth()+1)}-${padTwo(date.getDate())}T${padTwo(date.getHours())}:${padTwo(date.getMinutes())}`;
-}
-
-function fromDateTimeLocal(str) {
-  return new Date(str).toISOString();
-}
-
 export default function MealsScreen() {
   const [meals, setMeals] = useState([]);
   const [name, setName] = useState('');
@@ -44,7 +35,9 @@ export default function MealsScreen() {
   const [ingredients, setIngredients] = useState([]);
   const [notes, setNotes] = useState('');
   const [showForm, setShowForm] = useState(false);
-  const [dateTime, setDateTime] = useState(toDateTimeLocal(new Date()));
+  const [date, setDate] = useState(new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
   const [quickList, setQuickList] = useState(DEFAULT_INGREDIENTS);
   const [newQuickItem, setNewQuickItem] = useState('');
   const [showEditQuick, setShowEditQuick] = useState(false);
@@ -108,13 +101,13 @@ export default function MealsScreen() {
       name: name.trim(),
       ingredients,
       notes: notes.trim(),
-      timestamp: fromDateTimeLocal(dateTime),
+      timestamp: date.toISOString(),
     };
     await saveMeal(meal);
     setName('');
     setIngredients([]);
     setNotes('');
-    setDateTime(toDateTimeLocal(new Date()));
+    setDate(new Date());
     setShowForm(false);
     loadMeals();
   };
@@ -134,6 +127,10 @@ export default function MealsScreen() {
     return d.toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   };
 
+  const formatSelected = (d) => {
+    return d.toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  };
+
   return (
     <View style={styles.container}>
       {showForm ? (
@@ -141,14 +138,55 @@ export default function MealsScreen() {
           <ScrollView style={styles.form} contentContainerStyle={{ paddingBottom: 40 }}>
             <Text style={styles.formTitle}>Neue Mahlzeit</Text>
 
+            {/* Datum & Uhrzeit Picker */}
             <Text style={styles.label}>Datum & Uhrzeit *</Text>
-            <TextInput
-              style={styles.input}
-              value={dateTime}
-              onChangeText={setDateTime}
-              placeholder="YYYY-MM-DDTHH:MM"
-            />
-            <Text style={styles.sublabel}>Format: 2026-06-17T13:30 (auch nachträglich änderbar)</Text>
+            <View style={styles.dateRow}>
+              <TouchableOpacity style={styles.dateBtn} onPress={() => setShowDatePicker(true)}>
+                <Ionicons name="calendar-outline" size={18} color={COLORS.primary} />
+                <Text style={styles.dateBtnText}>
+                  {date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.dateBtn} onPress={() => setShowTimePicker(true)}>
+                <Ionicons name="time-outline" size={18} color={COLORS.primary} />
+                <Text style={styles.dateBtnText}>
+                  {date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {showDatePicker && (
+              <DateTimePicker
+                value={date}
+                mode="date"
+                display="default"
+                locale="de-DE"
+                onChange={(event, selected) => {
+                  setShowDatePicker(false);
+                  if (selected) {
+                    const newDate = new Date(date);
+                    newDate.setFullYear(selected.getFullYear(), selected.getMonth(), selected.getDate());
+                    setDate(newDate);
+                  }
+                }}
+              />
+            )}
+            {showTimePicker && (
+              <DateTimePicker
+                value={date}
+                mode="time"
+                display="default"
+                is24Hour={true}
+                onChange={(event, selected) => {
+                  setShowTimePicker(false);
+                  if (selected) {
+                    const newDate = new Date(date);
+                    newDate.setHours(selected.getHours(), selected.getMinutes());
+                    setDate(newDate);
+                  }
+                }}
+              />
+            )}
 
             <Text style={styles.label}>Name der Mahlzeit *</Text>
             <TextInput
@@ -181,7 +219,7 @@ export default function MealsScreen() {
 
             {showEditQuick && (
               <View style={styles.editQuickBox}>
-                <Text style={styles.sublabel}>Zutat zur Schnellauswahl hinzufügen:</Text>
+                <Text style={styles.sublabel}>Zutat hinzufügen:</Text>
                 <View style={styles.row}>
                   <TextInput
                     style={[styles.input, { flex: 1, marginRight: 8 }]}
@@ -193,7 +231,7 @@ export default function MealsScreen() {
                     <Ionicons name="add" size={24} color={COLORS.white} />
                   </TouchableOpacity>
                 </View>
-                <Text style={styles.sublabel}>Tippe auf ✕ um eine Zutat zu entfernen:</Text>
+                <Text style={styles.sublabel}>Tippe ✕ zum Entfernen:</Text>
                 <View style={styles.chips}>
                   {quickList.map(ing => (
                     <TouchableOpacity key={ing} style={styles.chipDelete} onPress={() => removeFromQuickList(ing)}>
@@ -250,7 +288,7 @@ export default function MealsScreen() {
         </KeyboardAvoidingView>
       ) : (
         <>
-          <TouchableOpacity style={styles.fabButton} onPress={() => { setDateTime(toDateTimeLocal(new Date())); setShowForm(true); }}>
+          <TouchableOpacity style={styles.fabButton} onPress={() => { setDate(new Date()); setShowForm(true); }}>
             <Ionicons name="add" size={28} color={COLORS.white} />
             <Text style={styles.fabText}>Mahlzeit eintragen</Text>
           </TouchableOpacity>
@@ -308,6 +346,19 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: COLORS.text,
   },
+  dateRow: { flexDirection: 'row', gap: 10 },
+  dateBtn: {
+    flex: 1,
+    backgroundColor: COLORS.light,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.accent,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  dateBtnText: { color: COLORS.primary, fontWeight: '600', fontSize: 14 },
   row: { flexDirection: 'row', alignItems: 'center' },
   addBtn: {
     backgroundColor: COLORS.accent,
@@ -318,12 +369,7 @@ const styles = StyleSheet.create({
   },
   quickHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 },
   editLink: { color: COLORS.accent, fontSize: 13, fontWeight: '600' },
-  editQuickBox: {
-    backgroundColor: COLORS.light,
-    borderRadius: 10,
-    padding: 10,
-    marginBottom: 8,
-  },
+  editQuickBox: { backgroundColor: COLORS.light, borderRadius: 10, padding: 10, marginBottom: 8 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 },
   chip: {
     backgroundColor: COLORS.light,
@@ -351,13 +397,7 @@ const styles = StyleSheet.create({
   chipText: { color: COLORS.primary, fontSize: 13 },
   chipTextSelected: { color: COLORS.white, fontSize: 13, fontWeight: '600' },
   selectedIngredients: { marginTop: 8 },
-  saveBtn: {
-    backgroundColor: COLORS.primary,
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    marginTop: 20,
-  },
+  saveBtn: { backgroundColor: COLORS.primary, borderRadius: 12, padding: 16, alignItems: 'center', marginTop: 20 },
   saveBtnText: { color: COLORS.white, fontSize: 16, fontWeight: 'bold' },
   cancelBtn: { alignItems: 'center', marginTop: 12, padding: 10 },
   cancelBtnText: { color: COLORS.gray, fontSize: 15 },
