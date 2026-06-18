@@ -92,20 +92,6 @@ export default function SettingsScreen() {
   return (
     <ScrollView style={[S.container, { backgroundColor: theme.background }]} contentContainerStyle={{ paddingBottom: 40 }}>
 
-      {/* Tag/Nacht Modus */}
-      <View style={[S.card, { backgroundColor: theme.surface }]}>
-        <Text style={[S.cardTitle, { color: theme.primary }]}>🌙 Anzeigemodus</Text>
-        <TouchableOpacity style={[S.themeToggle, { backgroundColor: theme.surface2, borderColor: theme.border }]} onPress={toggleTheme}>
-          <Ionicons name={isDark ? 'sunny-outline' : 'moon-outline'} size={22} color={theme.primary} />
-          <Text style={[S.themeToggleText, { color: theme.text }]}>
-            {isDark ? '☀️ Tagmodus aktivieren' : '🌙 Nachtmodus aktivieren'}
-          </Text>
-          <View style={[S.toggleIndicator, { backgroundColor: isDark ? theme.accent : theme.border }]}>
-            <Text style={{ color: '#fff', fontSize: 11, fontWeight: 'bold' }}>{isDark ? 'AN' : 'AUS'}</Text>
-          </View>
-        </TouchableOpacity>
-      </View>
-
       {/* KI-Anbieter Auswahl */}
       <View style={[S.card, { backgroundColor: theme.surface }]}>
         <Text style={[S.cardTitle, { color: theme.primary }]}>🤖 KI-Anbieter wählen</Text>
