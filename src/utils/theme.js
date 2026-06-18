@@ -1,0 +1,36 @@
+// Zentrales Theme-System für Tag/Nacht-Modus
+export const LIGHT = {
+  mode: 'light',
+  primary: '#1a472a',
+  accent: '#52b788',
+  accentLight: '#d8f3dc',
+  background: '#f8f9fa',
+  surface: '#ffffff',
+  surface2: '#f1f3f5',
+  text: '#212529',
+  textSecondary: '#6c757d',
+  border: '#dee2e6',
+  danger: '#e63946',
+  warning: '#f4a261',
+  success: '#52b788',
+  cardBorder: '#52b788',
+  statusBar: 'dark-content',
+};
+
+export const DARK = {
+  mode: 'dark',
+  primary: '#52b788',
+  accent: '#74c69d',
+  accentLight: '#1b3a2a',
+  background: '#0d1117',
+  surface: '#161b22',
+  surface2: '#21262d',
+  text: '#e6edf3',
+  textSecondary: '#8b949e',
+  border: '#30363d',
+  danger: '#f85149',
+  warning: '#f0883e',
+  success: '#3fb950',
+  cardBorder: '#52b788',
+  statusBar: 'light-content',
+};
