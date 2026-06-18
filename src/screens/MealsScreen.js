@@ -163,6 +163,8 @@ function MealForm({ initial, onSave, onCancel, quickList, groups, onQuickListCha
     return initial.items || initial.ingredients.map(i => ({ type: 'single', label: i, ingredients: [i] }));
   });
   const [notes, setNotes] = useState(initial?.notes || '');
+  const [portionSize, setPortionSize] = useState(initial?.portionSize || 'mittel');
+  const [aids, setAids] = useState(initial?.aids || '');
   const [date, setDate] = useState(initial ? new Date(initial.timestamp) : new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
@@ -196,9 +198,11 @@ function MealForm({ initial, onSave, onCancel, quickList, groups, onQuickListCha
     onSave({
       id: initial?.id || Date.now().toString(),
       name: name.trim(),
-      items, // für Anzeige (Gruppen + Einzelzutaten)
-      ingredients: allIngredients, // für KI-Analyse
+      items,
+      ingredients: allIngredients,
       notes: notes.trim(),
+      portionSize,
+      aids: aids.trim(),
       timestamp: date.toISOString(),
     });
   };
@@ -334,6 +338,31 @@ function MealForm({ initial, onSave, onCancel, quickList, groups, onQuickListCha
           </View>
         )}
 
+        <Text style={[S.label, { color: theme.text }]}>Portionsgröße</Text>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          {[
+            { id: 'klein', label: '🥄 Klein' },
+            { id: 'mittel', label: '🍽️ Mittel' },
+            { id: 'groß', label: '🍱 Groß' },
+          ].map(p => (
+            <TouchableOpacity key={p.id}
+              style={[S.portionBtn, {
+                backgroundColor: portionSize === p.id ? theme.accent : theme.surface2,
+                borderColor: theme.accent,
+              }]}
+              onPress={() => setPortionSize(p.id)}>
+              <Text style={{ color: portionSize === p.id ? '#fff' : theme.text, fontSize: 13, fontWeight: portionSize === p.id ? '600' : '400' }}>
+                {p.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <Text style={[S.label, { color: theme.text }]}>Hilfsmittel eingenommen? (optional)</Text>
+        <Text style={[S.sublabel, { color: theme.textSecondary }]}>z.B. Laktase-Tablette, Pankreatin, Antihistaminikum</Text>
+        <TextInput style={inputStyle} placeholder="z.B. Laktase-Tablette vor dem Essen"
+          placeholderTextColor={theme.textSecondary} value={aids} onChangeText={setAids} />
+
         <Text style={[S.label, { color: theme.text }]}>Notizen (optional)</Text>
         <TextInput style={[inputStyle, { height: 80 }]} placeholder="Portionsgröße, Zubereitungsart..."
           placeholderTextColor={theme.textSecondary} value={notes} onChangeText={setNotes} multiline />
@@ -426,6 +455,14 @@ function MealCard({ meal, onEdit, onDelete, theme }) {
                 <Text style={{ color: theme.textSecondary, fontSize: 11 }}>{ing}</Text>
               </View>
             ))}
+          </View>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 6 }}>
+            {meal.portionSize && (
+              <Text style={{ fontSize: 12, color: theme.textSecondary }}>
+                {meal.portionSize === 'klein' ? '🥄' : meal.portionSize === 'groß' ? '🍱' : '🍽️'} Portion: {meal.portionSize}
+              </Text>
+            )}
+            {meal.aids ? <Text style={{ fontSize: 12, color: theme.success }}>💊 {meal.aids}</Text> : null}
           </View>
           {meal.notes ? <Text style={[S.mealNotes, { color: theme.textSecondary }]}>📝 {meal.notes}</Text> : null}
         </View>
@@ -522,6 +559,7 @@ function makeStyles(theme) {
     groupsBox: { borderRadius: 10, padding: 12, marginTop: 6 },
     groupChip: { borderRadius: 10, padding: 10, marginBottom: 8, borderWidth: 1 },
     groupChipText: { fontWeight: '600', fontSize: 14 },
+    portionBtn: { flex: 1, borderRadius: 10, borderWidth: 1, padding: 10, alignItems: 'center' },
     groupChipSub: { fontSize: 11, marginTop: 2 },
     manageBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 8, padding: 10, marginTop: 8, justifyContent: 'center' },
     editQuickBox: { borderRadius: 10, padding: 10, marginBottom: 8 },

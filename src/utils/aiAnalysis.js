@@ -7,7 +7,9 @@ function buildPrompt(meals, symptoms) {
     const date = new Date(m.timestamp);
     const items = m.items ? m.items.map(i => i.label).join(', ') : m.ingredients.join(', ');
     const allIngs = m.ingredients?.join(', ') || items;
-    return `• ${date.toLocaleString('de-DE')}: ${m.name} | Gerichte: ${items} | Zutaten: ${allIngs}${m.notes ? ` | Notiz: ${m.notes}` : ''}`;
+    const portion = m.portionSize ? ` | Portionsgröße: ${m.portionSize}` : '';
+    const aids = m.aids ? ` | Hilfsmittel eingenommen: ${m.aids}` : ' | Keine Hilfsmittel eingenommen';
+    return `• ${date.toLocaleString('de-DE')}: ${m.name} | Gerichte: ${items} | Zutaten: ${allIngs}${portion}${aids}${m.notes ? ` | Notiz: ${m.notes}` : ''}`;
   }).join('\n');
 
   const symptomsText = symptoms.map(s => {
@@ -19,9 +21,13 @@ function buildPrompt(meals, symptoms) {
   return `Du analysierst ein Lebensmitteltagebuch auf Unverträglichkeiten.
 
 Bekannte Unverträglichkeiten: Laktose, Fruktose
-Vermutet: Histamin, Kohlenhydrate
+Vermutet: Histamin, Kohlenhydrate, SIBO (Dünndarmfehlbesiedlung), Gluten, FODMAP
 
 WICHTIG: Symptome können bis zu 72 Stunden nach der Mahlzeit auftreten. Berücksichtige kumulierende Effekte (z.B. Histamin-Bucket-Effekt).
+
+WICHTIG zu Hilfsmitteln: Wenn bei einer Mahlzeit ein Hilfsmittel wie eine Laktase-Tablette eingenommen wurde, UND keine Symptome auftraten, ist das KEIN Beweis dass die Person Laktose verträgt — das Hilfsmittel hat die Verdauung unterstützt. Werte solche Fälle separat aus und weise explizit darauf hin.
+
+WICHTIG zu Portionsgrößen: Prüfe ob es eine Dosis-Wirkungs-Beziehung gibt — z.B. kleine Mengen eines Lebensmittels werden vertragen, größere Mengen verursachen Symptome. Das deutet auf eine Toleranzschwelle hin (häufig bei Laktose, Fruktose, FODMAP, Histamin).
 
 MAHLZEITEN:
 ${mealsText}
@@ -33,10 +39,12 @@ Analysiere:
 1. Welche Zutaten tauchen häufig in den 72h vor Symptomen auf?
 2. Gibt es Muster bei bestimmten Zutaten und Symptomtypen?
 3. Kumulierende Effekte (mehrere problematische Mahlzeiten hintereinander)?
-4. Welche Unverträglichkeiten könnten dahinterstecken?
-5. Konkrete Empfehlung: Welche Zutaten zuerst weglassen?
+4. Gibt es Hinweise auf eine Toleranzschwelle (kleine Menge OK, große Menge problematisch)?
+5. Welche Fälle mit Hilfsmitteln (z.B. Laktase) sind nicht aussagekräftig für die natürliche Verträglichkeit?
+6. Welche Unverträglichkeiten könnten dahinterstecken (Laktose, Fruktose, Histamin, Gluten, FODMAP, SIBO)?
+7. Konkrete Empfehlung: Welche Zutaten zuerst weglassen, und welche Tests (z.B. kontrollierte kleine Mengen ohne Hilfsmittel) sinnvoll wären?
 
-Antworte auf Deutsch, strukturiert mit Überschriften. Weise darauf hin dass dies keine medizinische Diagnose ist.`;
+Antworte auf Deutsch, strukturiert mit Überschriften. Weise darauf hin dass dies keine medizinische Diagnose ist und SIBO/Gluten-Verdacht ärztlich abgeklärt werden sollte (z.B. H2-Atemtest, Zöliakie-Diagnostik).`;
 }
 
 // ── OpenAI / ChatGPT ────────────────────────────────────────────
