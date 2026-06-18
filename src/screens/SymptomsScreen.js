@@ -94,6 +94,49 @@ function DateTimeRow({ label, date, onDatePress, onTimePress, theme }) {
   );
 }
 
+
+// ── Tages-Gruppe für Symptome (eigene Komponente, kein useState in renderItem) ──
+function SymptomDayGroup({ dayData, todayKey, theme, getSeverityColor, onDelete }) {
+  const [expanded, setExpanded] = useState(dayData.key === todayKey);
+  return (
+    <View style={{ marginBottom: 10 }}>
+      <TouchableOpacity
+        style={[{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 12, borderRadius: 10, borderWidth: 1, marginBottom: 6 }, { backgroundColor: theme.surface, borderColor: theme.border }]}
+        onPress={() => setExpanded(!expanded)}>
+        <Text style={{ fontWeight: "bold", fontSize: 14, color: theme.primary }}>{dayData.label}</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <Text style={{ color: theme.textSecondary, fontSize: 12 }}>{dayData.symptoms.length} Einträge</Text>
+          <Ionicons name={expanded ? "chevron-up" : "chevron-down"} size={18} color={theme.primary} />
+        </View>
+      </TouchableOpacity>
+      {expanded && dayData.symptoms.map(symptom => (
+        <View key={symptom.id} style={[{ borderRadius: 10, padding: 12, marginBottom: 8, borderLeftWidth: 4, elevation: 1 }, { backgroundColor: theme.surface, borderLeftColor: symptom.noProblem ? theme.success : theme.warning }]}>
+          <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
+            <Text style={{ fontSize: 26, marginRight: 10 }}>{symptom.icon}</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 15, fontWeight: "600", color: theme.text }}>{symptom.type}</Text>
+              <Text style={{ fontSize: 12, color: theme.textSecondary }}>
+                🕐 {new Date(symptom.timestamp).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })} Uhr
+                {symptom.endTimestamp && ` → ${new Date(symptom.endTimestamp).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })} Uhr`}
+              </Text>
+              {symptom.notes ? <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 4, fontStyle: "italic" }}>📝 {symptom.notes}</Text> : null}
+            </View>
+            <View style={{ alignItems: "flex-end", gap: 6 }}>
+              {symptom.severity > 0 && (
+                <View style={[{ borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 }, { backgroundColor: getSeverityColor(symptom.severity, theme) }]}>
+                  <Text style={{ color: "#fff", fontSize: 11, fontWeight: "bold" }}>{symptom.severity}/10</Text>
+                </View>
+              )}
+              <TouchableOpacity onPress={() => onDelete(symptom.id)}>
+                <Ionicons name="trash-outline" size={18} color={theme.danger} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
 export default function SymptomsScreen() {
   const { theme } = useTheme();
   const [symptoms, setSymptoms] = useState([]);
@@ -261,50 +304,15 @@ export default function SymptomsScreen() {
           data={grouped}
           keyExtractor={item => item.key}
           contentContainerStyle={{ padding: 16 }}
-          renderItem={({ item: dayData }) => {
-            const [expanded, setExpanded] = useState(dayData.key === todayKey);
-            return (
-              <View style={{ marginBottom: 10 }}>
-                <TouchableOpacity
-                  style={[styles.dayHeader, { backgroundColor: theme.surface, borderColor: theme.border }]}
-                  onPress={() => setExpanded(!expanded)}>
-                  <Text style={{ fontWeight: 'bold', fontSize: 14, color: theme.primary }}>{dayData.label}</Text>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Text style={{ color: theme.textSecondary, fontSize: 12 }}>{dayData.symptoms.length} Einträge</Text>
-                    <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={18} color={theme.primary} />
-                  </View>
-                </TouchableOpacity>
-                {expanded && dayData.symptoms.map(symptom => (
-                  <View key={symptom.id} style={[styles.symptomCard, {
-                    backgroundColor: theme.surface,
-                    borderLeftColor: symptom.noProblem ? theme.success : theme.warning,
-                  }]}>
-                    <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-                      <Text style={{ fontSize: 26, marginRight: 10 }}>{symptom.icon}</Text>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 15, fontWeight: '600', color: theme.text }}>{symptom.type}</Text>
-                        <Text style={{ fontSize: 12, color: theme.textSecondary }}>
-                          🕐 {new Date(symptom.timestamp).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr
-                          {symptom.endTimestamp && ` → ${new Date(symptom.endTimestamp).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr`}
-                        </Text>
-                        {symptom.notes ? <Text style={{ fontSize: 12, color: theme.textSecondary, marginTop: 4, fontStyle: 'italic' }}>📝 {symptom.notes}</Text> : null}
-                      </View>
-                      <View style={{ alignItems: 'flex-end', gap: 6 }}>
-                        {symptom.severity > 0 && (
-                          <View style={[styles.badge, { backgroundColor: getSeverityColor(symptom.severity, theme) }]}>
-                            <Text style={{ color: '#fff', fontSize: 11, fontWeight: 'bold' }}>{symptom.severity}/10</Text>
-                          </View>
-                        )}
-                        <TouchableOpacity onPress={() => handleDelete(symptom.id)}>
-                          <Ionicons name="trash-outline" size={18} color={theme.danger} />
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  </View>
-                ))}
-              </View>
-            );
-          }}
+          renderItem={({ item: dayData }) => (
+            <SymptomDayGroup
+              dayData={dayData}
+              todayKey={todayKey}
+              theme={theme}
+              getSeverityColor={getSeverityColor}
+              onDelete={handleDelete}
+            />
+          )}
         />
       )}
     </View>
