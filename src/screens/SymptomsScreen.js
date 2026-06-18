@@ -147,7 +147,7 @@ export default function SymptomsScreen() {
     setPicker(null);
   };
 
-  const getSeverityColor = (s) => { if (s === 0) return theme.success; if (s <= 3) return theme.success; if (s <= 6) return theme.warning; return theme.danger; };
+  const getSeverityColor = (s, t) => { const c = t || theme; if (s === 0) return c.success; if (s <= 3) return c.success; if (s <= 6) return c.warning; return c.danger; };
   const isNoProblem = selectedType?.noProblem;
   const grouped = groupByDay(symptoms);
   const autoIntervals = detectFreeIntervals(symptoms);
@@ -310,12 +310,6 @@ export default function SymptomsScreen() {
     </View>
   );
 
-  function getSeverityColor(s, t) {
-    if (s === 0) return t.success;
-    if (s <= 3) return t.success;
-    if (s <= 6) return t.warning;
-    return t.danger;
-  }
 }
 
 const styles = StyleSheet.create({
