@@ -22,6 +22,7 @@ export default function AnalysisScreen() {
   const [activeTab, setActiveTab] = useState('local');
   const [provider, setProvider] = useState('groq');
   const [hasKey, setHasKey] = useState(false);
+  const [hasGeminiResearchKey, setHasGeminiResearchKey] = useState(false);
 
   useFocusEffect(useCallback(() => { loadData(); }, []));
 
@@ -38,6 +39,7 @@ export default function AnalysisScreen() {
       const p = parsed.provider || 'groq';
       setProvider(p);
       setHasKey(!!(parsed.keys?.[p]));
+      setHasGeminiResearchKey(!!(parsed.keys?.gemini));
     }
   };
 
@@ -49,9 +51,13 @@ export default function AnalysisScreen() {
     const key = parsed.keys?.[p];
     if (!key) { Alert.alert('Fehler', `Kein API-Key für ${PROVIDER_NAMES[p]} hinterlegt.\nBitte unter Einstellungen eintragen.`); return; }
 
+    // Gemini-Key für die optionale Web-Recherche von Markenprodukten (z.B. "Cola Zero")
+    // wird verwendet falls vorhanden, unabhängig vom gewählten Hauptanbieter.
+    const geminiKeyForResearch = parsed.keys?.gemini || null;
+
     setLoading(true);
     try {
-      const result = await analyzeWithAI(meals, symptoms, key, p);
+      const result = await analyzeWithAI(meals, symptoms, key, p, geminiKeyForResearch);
       setAiResult(result);
       setActiveTab('ai');
     } catch (error) {
@@ -155,6 +161,15 @@ export default function AnalysisScreen() {
             </View>
           </View>
 
+          {hasGeminiResearchKey && (
+            <View style={[styles.researchBadge, { backgroundColor: theme.surface2, borderColor: theme.border }]}>
+              <Text style={{ fontSize: 14 }}>🌐</Text>
+              <Text style={{ fontSize: 11, color: theme.textSecondary, flex: 1 }}>
+                Web-Recherche aktiv: Markenprodukte (z.B. "Cola Zero") werden vor der Analyse automatisch nachgeschlagen, falls Gemini verfügbar ist.
+              </Text>
+            </View>
+          )}
+
           <TouchableOpacity
             style={[styles.aiBtn, { backgroundColor: loading ? theme.border : theme.primary }]}
             onPress={runAIAnalysis}
@@ -212,6 +227,7 @@ const styles = StyleSheet.create({
   providerBadge: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 10, padding: 12, borderWidth: 1, marginBottom: 12 },
   providerName: { fontWeight: 'bold', fontSize: 14 },
   providerStatus: { fontSize: 12, marginTop: 2 },
+  researchBadge: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 8, padding: 8, borderWidth: 1, marginBottom: 12 },
   aiBtn: { borderRadius: 12, padding: 16, alignItems: 'center', marginBottom: 12 },
   aiBtnText: { color: '#fff', fontSize: 15, fontWeight: 'bold' },
   loadingText: { textAlign: 'center', fontSize: 13, marginBottom: 12 },

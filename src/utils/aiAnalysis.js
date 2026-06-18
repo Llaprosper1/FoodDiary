@@ -2,7 +2,7 @@
 
 const SYSTEM_PROMPT = `Du bist ein erfahrener Ernährungsberater mit Spezialisierung auf Lebensmittelunverträglichkeiten. Du analysierst Tagebuchdaten und erkennst Muster zwischen Lebensmitteln und Symptomen.`;
 
-function buildPrompt(meals, symptoms) {
+function buildPrompt(meals, symptoms, researchedIngredients = {}) {
   const mealsText = meals.map(m => {
     const date = new Date(m.timestamp);
     const items = m.items ? m.items.map(i => i.label).join(', ') : m.ingredients.join(', ');
@@ -17,6 +17,11 @@ function buildPrompt(meals, symptoms) {
     const end = s.endTimestamp ? ` bis ${new Date(s.endTimestamp).toLocaleString('de-DE')}` : '';
     return `• ${date.toLocaleString('de-DE')}${end}: ${s.type} (Stärke: ${s.severity}/10)${s.notes ? ` – ${s.notes}` : ''}`;
   }).join('\n');
+
+  const researchedKeys = Object.keys(researchedIngredients);
+  const researchedText = researchedKeys.length > 0
+    ? `\n\nPER WEB-RECHERCHE ERMITTELTE INHALTSSTOFFE VON MARKENPRODUKTEN:\n${researchedKeys.map(k => `• ${k}: ${researchedIngredients[k].join(', ')}`).join('\n')}\n\nBeziehe diese recherchierten Inhaltsstoffe mit in die Analyse ein, auch wenn sie nicht explizit in der Zutatenliste der Mahlzeit standen.`
+    : '';
 
   return `Du analysierst ein Lebensmitteltagebuch auf Unverträglichkeiten.
 
@@ -33,7 +38,7 @@ MAHLZEITEN:
 ${mealsText}
 
 SYMPTOME:
-${symptomsText}
+${symptomsText}${researchedText}
 
 Analysiere:
 1. Welche Zutaten tauchen häufig in den 72h vor Symptomen auf?
@@ -47,8 +52,57 @@ Analysiere:
 Antworte auf Deutsch, strukturiert mit Überschriften. Weise darauf hin dass dies keine medizinische Diagnose ist und SIBO/Gluten-Verdacht ärztlich abgeklärt werden sollte (z.B. H2-Atemtest, Zöliakie-Diagnostik).`;
 }
 
-// ── OpenAI / ChatGPT ────────────────────────────────────────────
-async function analyzeWithOpenAI(meals, symptoms, apiKey) {
+// ── Web-Recherche für unbekannte Markenprodukte (via Gemini Search Grounding) ──
+// Läuft NUR wenn ein Gemini-Key hinterlegt ist. Schlägt sie fehl (Überlastung etc.),
+// wird sie einfach übersprungen – die Hauptanalyse läuft trotzdem normal weiter.
+async function lookupUnknownIngredients(meals, geminiKey) {
+  if (!geminiKey) return {};
+
+  // Sammle alle "items" Labels (Gerichtsnamen/Markennamen) aus allen Mahlzeiten
+  const allLabels = new Set();
+  meals.forEach(m => {
+    (m.items || []).forEach(it => allLabels.add(it.label));
+  });
+  if (allLabels.size === 0) return {};
+
+  const labelsList = [...allLabels].join(', ');
+  const lookupPrompt = `Für folgende Lebensmittel/Markenprodukte: ${labelsList}
+
+Falls es sich um ein bekanntes Markenprodukt oder Fertigprodukt handelt (z.B. Getränke, Süßigkeiten, Fertiggerichte), recherchiere die wichtigsten Inhaltsstoffe/Zutaten (z.B. von der Herstellerseite oder Verpackungsangaben).
+
+Antworte NUR als JSON-Objekt, ohne Markdown-Codeblock, im Format:
+{"Produktname": ["Zutat1", "Zutat2", ...], ...}
+
+Lasse Produkte die bereits einfache Lebensmittel sind (z.B. "Äpfel", "Milch") komplett weg – nur Markenprodukte/Fertigprodukte mit recherchierbaren Inhaltsstoffen aufnehmen. Falls du zu einem Produkt nichts Verlässliches findest, lasse es ebenfalls weg.`;
+
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${geminiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: lookupPrompt }] }],
+          tools: [{ google_search: {} }],
+          generationConfig: { maxOutputTokens: 800, temperature: 0.1 },
+        }),
+      }
+    );
+    if (!response.ok) return {}; // Überlastet, Rate-Limit etc. → einfach überspringen
+
+    const data = await response.json();
+    let text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    text = text.replace(/```json|```/g, '').trim();
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (e) {
+    // Jeglicher Fehler (Netzwerk, Parsing, Überlastung) → stillschweigend überspringen
+    return {};
+  }
+}
+
+
+async function analyzeWithOpenAI(meals, symptoms, apiKey, researchedIngredients) {
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
@@ -56,7 +110,7 @@ async function analyzeWithOpenAI(meals, symptoms, apiKey) {
       model: 'gpt-4o-mini', // günstiger als gpt-4o
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: buildPrompt(meals, symptoms) }
+        { role: 'user', content: buildPrompt(meals, symptoms, researchedIngredients) }
       ],
       max_tokens: 1500,
       temperature: 0.3,
@@ -71,7 +125,7 @@ async function analyzeWithOpenAI(meals, symptoms, apiKey) {
 }
 
 // ── Google Gemini ───────────────────────────────────────────────
-async function analyzeWithGemini(meals, symptoms, apiKey) {
+async function analyzeWithGemini(meals, symptoms, apiKey, researchedIngredients) {
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`,
     {
@@ -79,7 +133,7 @@ async function analyzeWithGemini(meals, symptoms, apiKey) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{
-          parts: [{ text: SYSTEM_PROMPT + '\n\n' + buildPrompt(meals, symptoms) }]
+          parts: [{ text: SYSTEM_PROMPT + '\n\n' + buildPrompt(meals, symptoms, researchedIngredients) }]
         }],
         generationConfig: { maxOutputTokens: 1500, temperature: 0.3 },
       }),
@@ -94,7 +148,7 @@ async function analyzeWithGemini(meals, symptoms, apiKey) {
 }
 
 // ── Groq (kostenlos, Llama 3) ───────────────────────────────────
-async function analyzeWithGroq(meals, symptoms, apiKey) {
+async function analyzeWithGroq(meals, symptoms, apiKey, researchedIngredients) {
   const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
@@ -102,7 +156,7 @@ async function analyzeWithGroq(meals, symptoms, apiKey) {
       model: 'llama-3.3-70b-versatile',
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: buildPrompt(meals, symptoms) }
+        { role: 'user', content: buildPrompt(meals, symptoms, researchedIngredients) }
       ],
       max_tokens: 1500,
       temperature: 0.3,
@@ -117,16 +171,23 @@ async function analyzeWithGroq(meals, symptoms, apiKey) {
 }
 
 // ── Haupt-Exportfunktion ────────────────────────────────────────
-export const analyzeWithAI = async (meals, symptoms, apiKey, provider = 'groq') => {
+// geminiKeyForResearch: optionaler Gemini-Key NUR für die Web-Recherche von
+// Markenprodukten – unabhängig davon welcher "provider" für die eigentliche
+// Analyse gewählt wurde. Schlägt die Recherche fehl, wird sie übersprungen.
+export const analyzeWithAI = async (meals, symptoms, apiKey, provider = 'groq', geminiKeyForResearch = null) => {
   if (!apiKey) throw new Error('Kein API-Key hinterlegt. Bitte unter Einstellungen einen Key eingeben.');
   if (meals.length < 3) throw new Error('Bitte mindestens 3 Mahlzeiten eintragen.');
   if (symptoms.length < 2) throw new Error('Bitte mindestens 2 Symptome eintragen.');
 
+  // Schritt 1: Versuche unbekannte Markenprodukte zu recherchieren (best effort)
+  const researchedIngredients = await lookupUnknownIngredients(meals, geminiKeyForResearch);
+
+  // Schritt 2: Eigentliche Analyse mit dem gewählten Provider
   switch (provider) {
-    case 'openai': return await analyzeWithOpenAI(meals, symptoms, apiKey);
-    case 'gemini': return await analyzeWithGemini(meals, symptoms, apiKey);
+    case 'openai': return await analyzeWithOpenAI(meals, symptoms, apiKey, researchedIngredients);
+    case 'gemini': return await analyzeWithGemini(meals, symptoms, apiKey, researchedIngredients);
     case 'groq':
-    default: return await analyzeWithGroq(meals, symptoms, apiKey);
+    default: return await analyzeWithGroq(meals, symptoms, apiKey, researchedIngredients);
   }
 };
 
