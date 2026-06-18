@@ -4,61 +4,54 @@ import {
   StyleSheet, ActivityIndicator, Alert
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { getMeals, getSymptoms, getApiKey } from '../utils/storage';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useTheme } from '../utils/themeContext';
+import { getMeals, getSymptoms } from '../utils/storage';
 import { analyzeWithAI, quickLocalAnalysis } from '../utils/aiAnalysis';
 
-const COLORS = {
-  primary: '#1a472a',
-  accent: '#52b788',
-  light: '#d8f3dc',
-  background: '#f8f9fa',
-  white: '#ffffff',
-  danger: '#e63946',
-  warning: '#f4a261',
-  text: '#212529',
-  gray: '#6c757d',
-  border: '#dee2e6',
-};
+const PROVIDER_NAMES = { groq: 'Groq (Llama 3)', gemini: 'Google Gemini', openai: 'ChatGPT (OpenAI)' };
+const PROVIDER_ICONS = { groq: '⚡', gemini: '🔷', openai: '🤖' };
 
 export default function AnalysisScreen() {
+  const { theme } = useTheme();
   const [meals, setMeals] = useState([]);
   const [symptoms, setSymptoms] = useState([]);
   const [aiResult, setAiResult] = useState(null);
   const [localResult, setLocalResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('local');
+  const [provider, setProvider] = useState('groq');
+  const [hasKey, setHasKey] = useState(false);
 
-  useFocusEffect(
-    useCallback(() => {
-      loadData();
-    }, [])
-  );
+  useFocusEffect(useCallback(() => { loadData(); }, []));
 
   const loadData = async () => {
     const m = await getMeals();
     const s = await getSymptoms();
     setMeals(m);
     setSymptoms(s);
+    setLocalResult(quickLocalAnalysis(m, s));
 
-    // Lokale Analyse direkt berechnen
-    const local = quickLocalAnalysis(m, s);
-    setLocalResult(local);
+    const stored = await AsyncStorage.getItem('food_diary_ai_settings');
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      const p = parsed.provider || 'groq';
+      setProvider(p);
+      setHasKey(!!(parsed.keys?.[p]));
+    }
   };
 
   const runAIAnalysis = async () => {
-    const apiKey = await getApiKey();
-    if (!apiKey) {
-      Alert.alert(
-        'API-Key fehlt',
-        'Bitte trage deinen OpenAI API-Key unter Einstellungen ein.',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
+    const stored = await AsyncStorage.getItem('food_diary_ai_settings');
+    if (!stored) { Alert.alert('Fehler', 'Bitte zuerst unter Einstellungen einen KI-Anbieter und API-Key auswählen.'); return; }
+    const parsed = JSON.parse(stored);
+    const p = parsed.provider || 'groq';
+    const key = parsed.keys?.[p];
+    if (!key) { Alert.alert('Fehler', `Kein API-Key für ${PROVIDER_NAMES[p]} hinterlegt.\nBitte unter Einstellungen eintragen.`); return; }
 
     setLoading(true);
     try {
-      const result = await analyzeWithAI(meals, symptoms, apiKey);
+      const result = await analyzeWithAI(meals, symptoms, key, p);
       setAiResult(result);
       setActiveTab('ai');
     } catch (error) {
@@ -70,136 +63,131 @@ export default function AnalysisScreen() {
 
   const getBarColor = (occurrences, max) => {
     const ratio = occurrences / max;
-    if (ratio > 0.6) return COLORS.danger;
-    if (ratio > 0.3) return COLORS.warning;
-    return COLORS.accent;
+    if (ratio > 0.6) return theme.danger;
+    if (ratio > 0.3) return theme.warning;
+    return theme.accent;
   };
 
-  const maxOccurrences = localResult?.length > 0 ? localResult[0].occurrences : 1;
+  const maxOcc = localResult?.length > 0 ? localResult[0].occurrences : 1;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 40 }}>
+    <ScrollView style={{ flex: 1, backgroundColor: theme.background }} contentContainerStyle={{ paddingBottom: 40 }}>
+
       {/* Statistiken */}
-      <View style={styles.statsRow}>
-        <View style={styles.statCard}>
-          <Text style={styles.statNumber}>{meals.length}</Text>
-          <Text style={styles.statLabel}>Mahlzeiten</Text>
-        </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statNumber}>{symptoms.length}</Text>
-          <Text style={styles.statLabel}>Symptome</Text>
-        </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statNumber}>
-            {new Set(meals.flatMap(m => m.ingredients)).size}
-          </Text>
-          <Text style={styles.statLabel}>Zutaten</Text>
-        </View>
+      <View style={{ flexDirection: 'row', padding: 16, gap: 10 }}>
+        {[
+          { number: meals.length, label: 'Mahlzeiten' },
+          { number: symptoms.length, label: 'Symptome' },
+          { number: new Set(meals.flatMap(m => m.ingredients || [])).size, label: 'Zutaten' },
+        ].map(s => (
+          <View key={s.label} style={[styles.statCard, { backgroundColor: theme.surface, borderTopColor: theme.accent }]}>
+            <Text style={[styles.statNumber, { color: theme.primary }]}>{s.number}</Text>
+            <Text style={[styles.statLabel, { color: theme.textSecondary }]}>{s.label}</Text>
+          </View>
+        ))}
       </View>
 
       {/* Tabs */}
-      <View style={styles.tabRow}>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'local' && styles.tabActive]}
-          onPress={() => setActiveTab('local')}
-        >
-          <Text style={[styles.tabText, activeTab === 'local' && styles.tabTextActive]}>
-            📊 Lokale Analyse
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'ai' && styles.tabActive]}
-          onPress={() => setActiveTab('ai')}
-        >
-          <Text style={[styles.tabText, activeTab === 'ai' && styles.tabTextActive]}>
-            🤖 KI-Analyse
-          </Text>
-        </TouchableOpacity>
+      <View style={[styles.tabRow, { backgroundColor: theme.surface, marginHorizontal: 16 }]}>
+        {['local', 'ai'].map(tab => (
+          <TouchableOpacity key={tab}
+            style={[styles.tab, activeTab === tab && { backgroundColor: theme.primary }]}
+            onPress={() => setActiveTab(tab)}>
+            <Text style={[styles.tabText, { color: activeTab === tab ? '#fff' : theme.textSecondary }]}>
+              {tab === 'local' ? '📊 Lokale Analyse' : '🤖 KI-Analyse'}
+            </Text>
+          </TouchableOpacity>
+        ))}
       </View>
 
+      {/* Lokale Analyse */}
       {activeTab === 'local' && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Verdächtige Zutaten</Text>
-          <Text style={styles.sectionSubtitle}>
-            Zutaten, die häufig in den 72 Stunden vor Symptomen vorkamen:
+        <View style={[styles.section, { backgroundColor: theme.surface }]}>
+          <Text style={[styles.sectionTitle, { color: theme.primary }]}>Verdächtige Zutaten</Text>
+          <Text style={[styles.sectionSub, { color: theme.textSecondary }]}>
+            Häufig in den 72h vor Symptomen:
           </Text>
-
           {!localResult || localResult.length === 0 ? (
-            <View style={styles.emptyBox}>
-              <Text style={styles.emptyText}>
+            <View style={[styles.emptyBox, { backgroundColor: theme.accentLight }]}>
+              <Text style={[styles.emptyText, { color: theme.primary }]}>
                 {meals.length < 3 || symptoms.length < 2
-                  ? '⚠️ Bitte mindestens 3 Mahlzeiten und 2 Symptome eintragen.'
-                  : 'Keine Muster gefunden. Trage mehr Daten ein.'}
+                  ? '⚠️ Mindestens 3 Mahlzeiten und 2 Symptome eintragen.'
+                  : 'Keine Muster gefunden. Mehr Daten eintragen.'}
               </Text>
             </View>
-          ) : (
-            localResult.map((item, idx) => (
-              <View key={item.ingredient} style={styles.barRow}>
-                <View style={styles.barLabel}>
-                  <Text style={styles.barRank}>#{idx + 1}</Text>
-                  <Text style={styles.barIngredient}>{item.ingredient}</Text>
-                </View>
-                <View style={styles.barContainer}>
-                  <View
-                    style={[
-                      styles.bar,
-                      {
-                        width: `${(item.occurrences / maxOccurrences) * 100}%`,
-                        backgroundColor: getBarColor(item.occurrences, maxOccurrences),
-                      }
-                    ]}
-                  />
-                  <Text style={styles.barCount}>{item.occurrences}×</Text>
-                </View>
-                <Text style={styles.barSymptoms}>{item.symptoms.join(', ')}</Text>
+          ) : localResult.map((item, idx) => (
+            <View key={item.ingredient} style={{ marginBottom: 14 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                <Text style={{ fontSize: 12, color: theme.textSecondary, width: 24 }}>#{idx+1}</Text>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: theme.text }}>{item.ingredient}</Text>
               </View>
-            ))
-          )}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <View style={{ flex: 1, height: 16, backgroundColor: theme.surface2, borderRadius: 8, overflow: 'hidden' }}>
+                  <View style={{
+                    height: 16, borderRadius: 8,
+                    width: `${(item.occurrences / maxOcc) * 100}%`,
+                    backgroundColor: getBarColor(item.occurrences, maxOcc)
+                  }} />
+                </View>
+                <Text style={{ fontSize: 12, color: theme.textSecondary, width: 24 }}>{item.occurrences}×</Text>
+              </View>
+              <Text style={{ fontSize: 11, color: theme.textSecondary, fontStyle: 'italic', marginTop: 2 }}>
+                {item.symptoms.join(', ')}
+              </Text>
+            </View>
+          ))}
         </View>
       )}
 
+      {/* KI-Analyse */}
       {activeTab === 'ai' && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>KI-Analyse mit ChatGPT</Text>
-          <Text style={styles.sectionSubtitle}>
-            ChatGPT analysiert alle deine Einträge und sucht nach Mustern bei Lebensmittelunverträglichkeiten.
-          </Text>
+        <View style={[styles.section, { backgroundColor: theme.surface }]}>
+          <Text style={[styles.sectionTitle, { color: theme.primary }]}>KI-Analyse</Text>
+
+          {/* Aktiver Provider */}
+          <View style={[styles.providerBadge, { backgroundColor: theme.accentLight, borderColor: theme.accent }]}>
+            <Text style={{ fontSize: 20 }}>{PROVIDER_ICONS[provider]}</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.providerName, { color: theme.primary }]}>{PROVIDER_NAMES[provider]}</Text>
+              <Text style={[styles.providerStatus, { color: hasKey ? theme.success : theme.danger }]}>
+                {hasKey ? '✅ API-Key hinterlegt' : '❌ Kein API-Key – bitte in Einstellungen eintragen'}
+              </Text>
+            </View>
+          </View>
 
           <TouchableOpacity
-            style={[styles.aiBtn, loading && styles.aiBtnDisabled]}
+            style={[styles.aiBtn, { backgroundColor: loading ? theme.border : theme.primary }]}
             onPress={runAIAnalysis}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color={COLORS.white} />
-            ) : (
-              <Text style={styles.aiBtnText}>🤖 Jetzt mit ChatGPT analysieren</Text>
-            )}
+            disabled={loading}>
+            {loading
+              ? <ActivityIndicator color="#fff" />
+              : <Text style={styles.aiBtnText}>{PROVIDER_ICONS[provider]} Jetzt analysieren</Text>
+            }
           </TouchableOpacity>
 
           {loading && (
-            <Text style={styles.loadingText}>
-              Analyse läuft... (kann 10–30 Sekunden dauern)
+            <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
+              Analyse läuft... (10–30 Sekunden)
             </Text>
           )}
 
-          {aiResult && (
-            <View style={styles.aiResult}>
-              <Text style={styles.aiResultTitle}>📋 Analyseergebnis</Text>
-              <Text style={styles.aiResultText}>{aiResult}</Text>
-              <Text style={styles.disclaimer}>
-                ⚠️ Dies ist keine medizinische Diagnose. Bitte konsultiere einen Arzt oder Ernährungsberater.
+          {aiResult ? (
+            <View style={[styles.aiResult, { backgroundColor: theme.accentLight }]}>
+              <Text style={[styles.aiResultTitle, { color: theme.primary }]}>📋 Analyseergebnis</Text>
+              <Text style={[styles.aiResultText, { color: theme.text }]}>{aiResult}</Text>
+              <Text style={[styles.disclaimer, { color: theme.warning, borderTopColor: theme.border }]}>
+                ⚠️ Keine medizinische Diagnose. Bitte einen Arzt konsultieren.
               </Text>
             </View>
-          )}
-
-          {!aiResult && !loading && (
-            <View style={styles.infoBox}>
-              <Text style={styles.infoText}>
-                💡 Für die KI-Analyse brauchst du einen OpenAI API-Key.{'\n\n'}
-                Den erhältst du kostenlos (mit Guthaben) unter:{'\n'}
-                platform.openai.com/api-keys{'\n\n'}
-                Trage ihn unter ⚙️ Einstellungen ein.
+          ) : !loading && (
+            <View style={[styles.infoBox, { backgroundColor: theme.surface2, borderLeftColor: theme.warning }]}>
+              <Text style={[styles.infoText, { color: theme.text }]}>
+                💡 Empfehlung: <Text style={{ fontWeight: 'bold' }}>Groq</Text> ist kostenlos!{'\n\n'}
+                1. Gehe zu console.groq.com{'\n'}
+                2. Erstelle einen kostenlosen Account{'\n'}
+                3. Klicke auf „API Keys" → „Create API Key"{'\n'}
+                4. Key in ⚙️ Einstellungen eintragen{'\n'}
+                5. Groq als Anbieter auswählen
               </Text>
             </View>
           )}
@@ -210,97 +198,27 @@ export default function AnalysisScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  statsRow: {
-    flexDirection: 'row',
-    padding: 16,
-    gap: 10,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: COLORS.white,
-    borderRadius: 12,
-    padding: 14,
-    alignItems: 'center',
-    elevation: 2,
-    borderTopWidth: 3,
-    borderTopColor: COLORS.accent,
-  },
-  statNumber: { fontSize: 28, fontWeight: 'bold', color: COLORS.primary },
-  statLabel: { fontSize: 12, color: COLORS.gray, marginTop: 2 },
-  tabRow: {
-    flexDirection: 'row',
-    marginHorizontal: 16,
-    backgroundColor: COLORS.white,
-    borderRadius: 12,
-    padding: 4,
-    marginBottom: 8,
-  },
-  tab: {
-    flex: 1,
-    padding: 10,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  tabActive: { backgroundColor: COLORS.primary },
-  tabText: { color: COLORS.gray, fontWeight: '500', fontSize: 13 },
-  tabTextActive: { color: COLORS.white, fontWeight: 'bold' },
-  section: {
-    margin: 16,
-    backgroundColor: COLORS.white,
-    borderRadius: 14,
-    padding: 16,
-    elevation: 2,
-  },
-  sectionTitle: { fontSize: 17, fontWeight: 'bold', color: COLORS.primary, marginBottom: 4 },
-  sectionSubtitle: { fontSize: 13, color: COLORS.gray, marginBottom: 16 },
-  emptyBox: {
-    backgroundColor: COLORS.light,
-    borderRadius: 10,
-    padding: 14,
-  },
-  emptyText: { color: COLORS.primary, fontSize: 14, textAlign: 'center' },
-  barRow: { marginBottom: 14 },
-  barLabel: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
-  barRank: { fontSize: 12, color: COLORS.gray, width: 24 },
-  barIngredient: { fontSize: 14, fontWeight: '600', color: COLORS.text },
-  barContainer: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  bar: { height: 16, borderRadius: 8, minWidth: 10 },
-  barCount: { fontSize: 12, color: COLORS.gray },
-  barSymptoms: { fontSize: 11, color: COLORS.gray, fontStyle: 'italic', marginTop: 2 },
-  aiBtn: {
-    backgroundColor: COLORS.primary,
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  aiBtnDisabled: { opacity: 0.6 },
-  aiBtnText: { color: COLORS.white, fontSize: 15, fontWeight: 'bold' },
-  loadingText: { textAlign: 'center', color: COLORS.gray, fontSize: 13, marginBottom: 12 },
-  aiResult: {
-    backgroundColor: COLORS.light,
-    borderRadius: 12,
-    padding: 14,
-    marginTop: 8,
-  },
-  aiResultTitle: { fontSize: 15, fontWeight: 'bold', color: COLORS.primary, marginBottom: 10 },
-  aiResultText: { fontSize: 14, color: COLORS.text, lineHeight: 22 },
-  disclaimer: {
-    fontSize: 12,
-    color: COLORS.warning,
-    marginTop: 12,
-    fontStyle: 'italic',
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-    paddingTop: 10,
-  },
-  infoBox: {
-    backgroundColor: '#fff3e0',
-    borderRadius: 10,
-    padding: 14,
-    borderLeftWidth: 4,
-    borderLeftColor: COLORS.warning,
-  },
-  infoText: { fontSize: 13, color: COLORS.text, lineHeight: 20 },
+  statCard: { flex: 1, borderRadius: 12, padding: 14, alignItems: 'center', elevation: 2, borderTopWidth: 3 },
+  statNumber: { fontSize: 28, fontWeight: 'bold' },
+  statLabel: { fontSize: 12, marginTop: 2 },
+  tabRow: { flexDirection: 'row', borderRadius: 12, padding: 4, marginBottom: 8 },
+  tab: { flex: 1, padding: 10, borderRadius: 10, alignItems: 'center' },
+  tabText: { fontWeight: '500', fontSize: 13 },
+  section: { margin: 16, borderRadius: 14, padding: 16, elevation: 2 },
+  sectionTitle: { fontSize: 17, fontWeight: 'bold', marginBottom: 4 },
+  sectionSub: { fontSize: 13, marginBottom: 16 },
+  emptyBox: { borderRadius: 10, padding: 14 },
+  emptyText: { fontSize: 14, textAlign: 'center' },
+  providerBadge: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 10, padding: 12, borderWidth: 1, marginBottom: 12 },
+  providerName: { fontWeight: 'bold', fontSize: 14 },
+  providerStatus: { fontSize: 12, marginTop: 2 },
+  aiBtn: { borderRadius: 12, padding: 16, alignItems: 'center', marginBottom: 12 },
+  aiBtnText: { color: '#fff', fontSize: 15, fontWeight: 'bold' },
+  loadingText: { textAlign: 'center', fontSize: 13, marginBottom: 12 },
+  aiResult: { borderRadius: 12, padding: 14, marginTop: 8 },
+  aiResultTitle: { fontSize: 15, fontWeight: 'bold', marginBottom: 10 },
+  aiResultText: { fontSize: 14, lineHeight: 22 },
+  disclaimer: { fontSize: 12, fontStyle: 'italic', marginTop: 12, borderTopWidth: 1, paddingTop: 10 },
+  infoBox: { borderRadius: 10, padding: 14, borderLeftWidth: 4 },
+  infoText: { fontSize: 13, lineHeight: 22 },
 });

@@ -1,122 +1,152 @@
-// KI-Analyse mit OpenAI ChatGPT API
-// Der Nutzer trägt seinen eigenen API-Key in den Einstellungen ein
+// KI-Analyse – unterstützt OpenAI, Google Gemini und Groq
 
-export const analyzeWithAI = async (meals, symptoms, apiKey) => {
-  if (!apiKey) {
-    throw new Error('Kein API-Key hinterlegt. Bitte unter Einstellungen einen OpenAI API-Key eingeben.');
-  }
+const SYSTEM_PROMPT = `Du bist ein erfahrener Ernährungsberater mit Spezialisierung auf Lebensmittelunverträglichkeiten. Du analysierst Tagebuchdaten und erkennst Muster zwischen Lebensmitteln und Symptomen.`;
 
-  if (meals.length < 3) {
-    throw new Error('Bitte trage mindestens 3 Mahlzeiten ein, bevor du eine Analyse startest.');
-  }
-
-  if (symptoms.length < 2) {
-    throw new Error('Bitte trage mindestens 2 Symptome ein, bevor du eine Analyse startest.');
-  }
-
-  // Daten aufbereiten für den KI-Prompt
+function buildPrompt(meals, symptoms) {
   const mealsText = meals.map(m => {
     const date = new Date(m.timestamp);
-    return `• ${date.toLocaleString('de-DE')}: ${m.name} (Zutaten: ${m.ingredients.join(', ')})${m.notes ? ` – Notiz: ${m.notes}` : ''}`;
+    const items = m.items ? m.items.map(i => i.label).join(', ') : m.ingredients.join(', ');
+    const allIngs = m.ingredients?.join(', ') || items;
+    return `• ${date.toLocaleString('de-DE')}: ${m.name} | Gerichte: ${items} | Zutaten: ${allIngs}${m.notes ? ` | Notiz: ${m.notes}` : ''}`;
   }).join('\n');
 
   const symptomsText = symptoms.map(s => {
     const date = new Date(s.timestamp);
-    return `• ${date.toLocaleString('de-DE')}: ${s.type} (Stärke: ${s.severity}/10)${s.notes ? ` – Notiz: ${s.notes}` : ''}`;
+    const end = s.endTimestamp ? ` bis ${new Date(s.endTimestamp).toLocaleString('de-DE')}` : '';
+    return `• ${date.toLocaleString('de-DE')}${end}: ${s.type} (Stärke: ${s.severity}/10)${s.notes ? ` – ${s.notes}` : ''}`;
   }).join('\n');
 
-  const prompt = `Du bist ein Ernährungsexperte und analysierst ein Lebensmitteltagebuch auf Unverträglichkeiten.
+  return `Du analysierst ein Lebensmitteltagebuch auf Unverträglichkeiten.
 
-Der Patient weiß bereits, dass er auf Laktose und Fruktose reagiert. Er vermutet außerdem Histamin-Intoleranz und möglicherweise eine Kohlenhydrat-Unverträglichkeit.
+Bekannte Unverträglichkeiten: Laktose, Fruktose
+Vermutet: Histamin, Kohlenhydrate
 
-WICHTIG: Symptome können bei diesem Patienten mit einer Verzögerung von bis zu 72 Stunden nach der Mahlzeit auftreten. Berücksichtige daher bei der Analyse alle Mahlzeiten innerhalb von 72 Stunden vor einem Symptom – nicht nur die letzte Mahlzeit. Manche Reaktionen (z.B. Histamin-Intoleranz, FODMAP, Darmflora-Reaktionen) sind typischerweise verzögert.
+WICHTIG: Symptome können bis zu 72 Stunden nach der Mahlzeit auftreten. Berücksichtige kumulierende Effekte (z.B. Histamin-Bucket-Effekt).
 
-MAHLZEITEN (chronologisch):
+MAHLZEITEN:
 ${mealsText}
 
-SYMPTOME (chronologisch):
+SYMPTOME:
 ${symptomsText}
 
-Analysiere bitte:
-1. Welche Zutaten oder Lebensmittelgruppen tauchen häufig in den 72 Stunden VOR Symptomen auf?
-2. Gibt es Muster bei bestimmten Zutaten und bestimmten Symptomtypen?
-3. Gibt es Hinweise auf kumulierende Effekte (z.B. Histamin-Bucket-Effekt: mehrere histaminreiche Mahlzeiten hintereinander)?
-4. Welche Unverträglichkeiten könnten dahinterstecken (Laktose, Fruktose, Histamin, Gluten, FODMAP, etc.)?
-5. Konkrete Empfehlung: Welche Zutaten sollte der Patient zunächst weglassen und testen?
+Analysiere:
+1. Welche Zutaten tauchen häufig in den 72h vor Symptomen auf?
+2. Gibt es Muster bei bestimmten Zutaten und Symptomtypen?
+3. Kumulierende Effekte (mehrere problematische Mahlzeiten hintereinander)?
+4. Welche Unverträglichkeiten könnten dahinterstecken?
+5. Konkrete Empfehlung: Welche Zutaten zuerst weglassen?
 
-Antworte auf Deutsch, strukturiert mit Überschriften. Sei konkret und praktisch. Weise darauf hin, dass dies keine medizinische Diagnose ist und ein Arzt konsultiert werden sollte.`;
+Antworte auf Deutsch, strukturiert mit Überschriften. Weise darauf hin dass dies keine medizinische Diagnose ist.`;
+}
 
+// ── OpenAI / ChatGPT ────────────────────────────────────────────
+async function analyzeWithOpenAI(meals, symptoms, apiKey) {
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
     body: JSON.stringify({
-      model: 'gpt-4o',
+      model: 'gpt-4o-mini', // günstiger als gpt-4o
       messages: [
-        {
-          role: 'system',
-          content: 'Du bist ein erfahrener Ernährungsberater mit Spezialisierung auf Lebensmittelunverträglichkeiten. Du analysierst Tagebuchdaten und erkennst Muster zwischen Lebensmitteln und Symptomen.'
-        },
-        {
-          role: 'user',
-          content: prompt
-        }
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: buildPrompt(meals, symptoms) }
       ],
       max_tokens: 1500,
       temperature: 0.3,
     }),
   });
-
   if (!response.ok) {
     const error = await response.json();
     throw new Error(`OpenAI Fehler: ${error.error?.message || 'Unbekannter Fehler'}`);
   }
-
   const data = await response.json();
   return data.choices[0].message.content;
+}
+
+// ── Google Gemini ───────────────────────────────────────────────
+async function analyzeWithGemini(meals, symptoms, apiKey) {
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{ text: SYSTEM_PROMPT + '\n\n' + buildPrompt(meals, symptoms) }]
+        }],
+        generationConfig: { maxOutputTokens: 1500, temperature: 0.3 },
+      }),
+    }
+  );
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(`Gemini Fehler: ${error.error?.message || 'Unbekannter Fehler'}`);
+  }
+  const data = await response.json();
+  return data.candidates[0].content.parts[0].text;
+}
+
+// ── Groq (kostenlos, Llama 3) ───────────────────────────────────
+async function analyzeWithGroq(meals, symptoms, apiKey) {
+  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model: 'llama-3.3-70b-versatile',
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: buildPrompt(meals, symptoms) }
+      ],
+      max_tokens: 1500,
+      temperature: 0.3,
+    }),
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(`Groq Fehler: ${error.error?.message || 'Unbekannter Fehler'}`);
+  }
+  const data = await response.json();
+  return data.choices[0].message.content;
+}
+
+// ── Haupt-Exportfunktion ────────────────────────────────────────
+export const analyzeWithAI = async (meals, symptoms, apiKey, provider = 'groq') => {
+  if (!apiKey) throw new Error('Kein API-Key hinterlegt. Bitte unter Einstellungen einen Key eingeben.');
+  if (meals.length < 3) throw new Error('Bitte mindestens 3 Mahlzeiten eintragen.');
+  if (symptoms.length < 2) throw new Error('Bitte mindestens 2 Symptome eintragen.');
+
+  switch (provider) {
+    case 'openai': return await analyzeWithOpenAI(meals, symptoms, apiKey);
+    case 'gemini': return await analyzeWithGemini(meals, symptoms, apiKey);
+    case 'groq':
+    default: return await analyzeWithGroq(meals, symptoms, apiKey);
+  }
 };
 
-// Schnellanalyse: Häufigste Zutaten vor Symptomen (lokal, ohne API)
+// ── Lokale Analyse (kein API-Key nötig) ────────────────────────
 export const quickLocalAnalysis = (meals, symptoms) => {
   if (meals.length === 0 || symptoms.length === 0) return null;
-
   const ingredientSymptomMap = {};
-
   symptoms.forEach(symptom => {
+    if (symptom.noProblem) return;
     const symptomTime = new Date(symptom.timestamp).getTime();
-
-    // Mahlzeiten in den 72 Stunden VOR dem Symptom
-    // (Reaktionen können je nach Unverträglichkeit stark verzögert sein)
     const recentMeals = meals.filter(meal => {
       const mealTime = new Date(meal.timestamp).getTime();
-      const diff = (symptomTime - mealTime) / (1000 * 60 * 60); // in Stunden
+      const diff = (symptomTime - mealTime) / (1000 * 60 * 60);
       return diff >= 0 && diff <= 72;
     });
-
     recentMeals.forEach(meal => {
-      meal.ingredients.forEach(ingredient => {
+      const ings = meal.ingredients || meal.items?.flatMap(i => i.ingredients) || [];
+      ings.forEach(ingredient => {
         const key = ingredient.toLowerCase().trim();
-        if (!ingredientSymptomMap[key]) {
-          ingredientSymptomMap[key] = { count: 0, symptoms: [] };
-        }
+        if (!ingredientSymptomMap[key]) ingredientSymptomMap[key] = { count: 0, symptoms: [] };
         ingredientSymptomMap[key].count++;
-        if (!ingredientSymptomMap[key].symptoms.includes(symptom.type)) {
+        if (!ingredientSymptomMap[key].symptoms.includes(symptom.type))
           ingredientSymptomMap[key].symptoms.push(symptom.type);
-        }
       });
     });
   });
-
-  // Sortiert nach Häufigkeit
-  const sorted = Object.entries(ingredientSymptomMap)
+  return Object.entries(ingredientSymptomMap)
     .sort((a, b) => b[1].count - a[1].count)
-    .slice(0, 10);
-
-  return sorted.map(([ingredient, data]) => ({
-    ingredient,
-    occurrences: data.count,
-    symptoms: data.symptoms,
-  }));
+    .slice(0, 10)
+    .map(([ingredient, data]) => ({ ingredient, occurrences: data.count, symptoms: data.symptoms }));
 };
